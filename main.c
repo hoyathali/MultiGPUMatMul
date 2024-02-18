@@ -14,7 +14,7 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     // Print rank and size
-    printf("Hello from process %d of %d\n", rank, size);
+    printf("Hello from process %d of %d. Bye\n", rank, size);
 
     // Finalize MPI environment
     MPI_Finalize();
