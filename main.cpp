@@ -5,11 +5,12 @@
 #include <cstring>
 #include <mpi.h>
 #include <boost/mpi/datatype.hpp>
+#include "mult.cuh"
 
 #define BAND_SIZE 2
-#define M 6  // Size of the matrix_B
-#define K 8  // Size of the matrix_B
-#define N 6  // Size of the matrix_B
+#define M 2  // Size of the matrix_B
+#define K 2  // Size of the matrix_B
+#define N 2  // Size of the matrix_B
 
 template <typename T>
 struct genMatrix {
@@ -32,7 +33,13 @@ void matrixMult()
     int rank, size;
     T* column = (T*)calloc(BAND_SIZE * K, sizeof(T)); // Buffer to receive the column
     T* row = (T*)calloc(BAND_SIZE * K, sizeof(T)); // Buffer to receive the column
-							 //
+    T* res = (T*)calloc(BAND_SIZE * BAND_SIZE, sizeof(T)); // Buffer to receive the column
+    
+    T *d_column = nullptr, *d_row = nullptr, *d_res = nullptr;
+    cudaMalloc(&d_column, BAND_SIZE * K * sizeof(T));
+    cudaMalloc(&d_row, BAND_SIZE * K * sizeof(T));
+    cudaMalloc(&d_res, BAND_SIZE * BAND_SIZE * sizeof(T));
+
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
@@ -84,6 +91,7 @@ void matrixMult()
 	    // Broadcast the rows of the matrix_A
 	    MPI_Bcast(row, BAND_SIZE * K, boost::mpi::get_mpi_datatype<T>(), 0, MPI_COMM_WORLD);
 		
+	    computeMM<float>(d_row, d_column, d_res , BAND_SIZE, K, BAND_SIZE);
 
 	    // Each process prints the received column
 	    std::cout<<"Process "<<rank<<" received row band: ";
@@ -96,6 +104,16 @@ void matrixMult()
 	    for (int i = 0; i < BAND_SIZE * K; i++)
 		std::cout<<column[i]<<" ";
 	    std::cout<<std::endl;
+
+	    // Each process prints the resultant matrix
+	    std::cout<<"Process "<<rank<<" computed: ";
+	    for (int i = 0; i < BAND_SIZE * K; i++)
+	    {
+		T temp;
+		cudaMemcpy(&temp, d_res+i, sizeof(T), cudaMemcpyDeviceToHost);
+		std::cout<<column[i]<<" ";
+	    }
+	    std::cout<<std::endl;
 	}
     }
 
@@ -103,6 +121,9 @@ void matrixMult()
     MPI_Type_free(&coltype);
     MPI_Type_free(&col);
 
+    cudaFree(d_column);
+    cudaFree(d_row);
+    cudaFree(d_res);
     free(column);
     free(row);
 }
@@ -120,7 +141,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    matrixMult<double>();
+    matrixMult<float>();
 
     MPI_Finalize();
     return 0;
