@@ -1,4 +1,30 @@
 #include<iostream>
+#include "mult.cuh"
+
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
+
+void custom_cudaMalloc(void** devPtr, size_t size)
+{
+    cudaMalloc(devPtr, size);
+}
+
+void custom_cudaFree ( void* devPtr )
+{
+    cudaFree(devPtr);
+}
+
+void custom_cudaMemcpy_d2h ( void* dst, const void* src, size_t count)
+{
+    cudaMemcpy(dst, src, count, cudaMemcpyDeviceToHost);
+}
 
 __global__ void hello()
 {
@@ -10,7 +36,100 @@ void call_cuda()
 	hello<<<2,32>>>();
 	cudaDeviceSynchronize();
 }
+
 	
+/**
+ * Matrix multiplication (CUDA Kernel) on the device: C = A * B
+ * wA is A's width and wB is B's width
+ */
+__global__ void MatrixMulCUDA(float *C, const float *A,
+    const float *B, int wA,
+    int wB) {
+
+  printf("HI REBIN %d\n", threadIdx.x);
+  const int BLOCK_SIZE = 32;
+  // Block index
+  int bx = blockIdx.x;
+  int by = blockIdx.y;
+
+  // Thread index
+  int tx = threadIdx.x;
+  int ty = threadIdx.y;
+
+  // Index of the first sub-matrix of A processed by the block
+  int aBegin = wA * BLOCK_SIZE * by;
+
+  // Index of the last sub-matrix of A processed by the block
+  int aEnd   = aBegin + wA - 1;
+
+  // Step size used to iterate through the sub-matrices of A
+  int aStep  = BLOCK_SIZE;
+
+  // Index of the first sub-matrix of B processed by the block
+  int bBegin = BLOCK_SIZE * bx;
+
+  // Step size used to iterate through the sub-matrices of B
+  int bStep  = BLOCK_SIZE * wB;
+
+  // Csub is used to store the element of the block sub-matrix
+  // that is computed by the thread
+  float Csub = 0;
+
+  // Loop over all the sub-matrices of A and B
+  // required to compute the block sub-matrix
+  for (int a = aBegin, b = bBegin;
+       a <= aEnd;
+       a += aStep, b += bStep) {
+    // Declaration of the shared memory array As used to
+    // store the sub-matrix of A
+    __shared__ float As[BLOCK_SIZE][BLOCK_SIZE];
+
+    // Declaration of the shared memory array Bs used to
+    // store the sub-matrix of B
+    __shared__ float Bs[BLOCK_SIZE][BLOCK_SIZE];
+
+    // Load the matrices from device memory
+    // to shared memory; each thread loads
+    // one element of each matrix
+    As[ty][tx] = A[a + wA * ty + tx];
+    Bs[ty][tx] = B[b + wB * ty + tx];
+
+    // Synchronize to make sure the matrices are loaded
+    __syncthreads();
+
+    // Multiply the two matrices together;
+    // each thread computes one element
+    // of the block sub-matrix
+#pragma unroll
+
+    for (int k = 0; k < BLOCK_SIZE; ++k) {
+      Csub += As[ty][k] * Bs[k][tx];
+    }
+
+    // Synchronize to make sure that the preceding
+    // computation is done before loading two new
+    // sub-matrices of A and B in the next iteration
+    __syncthreads();
+  }
+
+  // Write the block sub-matrix to device memory;
+  // each thread writes one element
+  int c = wB * BLOCK_SIZE * by + BLOCK_SIZE * bx;
+  C[c + wB * ty + tx] = Csub;
+}
+
+void computeMM(const float *A, const float *B, float *C, int m, int n, int k)
+{
+    printf("Life started\n");
+    dim3 threads(16, 16);
+    dim3 grid(n/threads.x, m/threads.y); 
+    //compute_tf32gemm_async_copy(A, B, C);
+    MatrixMulCUDA<<<grid, threads>>>(C, A, B, k, k);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+    return;
+}
+
 
 // Performs an MxNxK tf32 GEMM (C=alpha*A*B + beta*C) assuming:
 //  1) Matrices are packed in memory.

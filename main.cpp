@@ -8,47 +8,45 @@
 #include "mult.cuh"
 
 #define BAND_SIZE 2
-#define M 2  // Size of the matrix_B
-#define K 2  // Size of the matrix_B
-#define N 2  // Size of the matrix_B
+#define M 4  // Size of the matrix_B
+#define K 4  // Size of the matrix_B
+#define N 4  // Size of the matrix_B
 
-template <typename T>
 struct genMatrix {
     unsigned int nRows;
     unsigned int nCols;
-    T counter = 0;
+    float counter = 0;
 
-    genMatrix(unsigned int nRows, unsigned int nCols, T init=0): nRows(nRows), nCols(nCols), counter(init) {}
+    genMatrix(unsigned int nRows, unsigned int nCols, float init=0): nRows(nRows), nCols(nCols), counter(init) {}
 
-    T operator()()
+    float operator()()
     {
 	return (++counter);
     }
 };
 
 
-template <typename T>
 void matrixMult()
 {
     int rank, size;
-    T* column = (T*)calloc(BAND_SIZE * K, sizeof(T)); // Buffer to receive the column
-    T* row = (T*)calloc(BAND_SIZE * K, sizeof(T)); // Buffer to receive the column
-    T* res = (T*)calloc(BAND_SIZE * BAND_SIZE, sizeof(T)); // Buffer to receive the column
+    float* column = (float*)calloc(BAND_SIZE * K, sizeof(float)); // Buffer to receive the column
+    float* row = (float*)calloc(BAND_SIZE * K, sizeof(float)); // Buffer to receive the column
+    float* res = (float*)calloc(BAND_SIZE * BAND_SIZE, sizeof(float)); // Buffer to receive the column
     
-    T *d_column = nullptr, *d_row = nullptr, *d_res = nullptr;
-    cudaMalloc(&d_column, BAND_SIZE * K * sizeof(T));
-    cudaMalloc(&d_row, BAND_SIZE * K * sizeof(T));
-    cudaMalloc(&d_res, BAND_SIZE * BAND_SIZE * sizeof(T));
+    float *d_column = nullptr, *d_row = nullptr, *d_res = nullptr;
+    custom_cudaMalloc((void**)&d_column, BAND_SIZE * K * sizeof(float));
+    custom_cudaMalloc((void**)&d_row, BAND_SIZE * K * sizeof(float));
+    custom_cudaMalloc((void**)&d_res, BAND_SIZE * BAND_SIZE * sizeof(float));
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    std::vector<T> matrix_A(M*K);
-    std::vector<T> matrix_B(K*N);
+    std::vector<float> matrix_A(M*K);
+    std::vector<float> matrix_B(K*N);
 
     // std::generate(matrix_A.begin(), matrix_A.end(), [n = 0] () mutable { return n++; });
-    std::generate(matrix_A.begin(), matrix_A.end(), genMatrix<T>(M, K));
-    std::generate(matrix_B.begin(), matrix_B.end(), genMatrix<T>(K, N, 100));
+    std::generate(matrix_A.begin(), matrix_A.end(), genMatrix(M, K));
+    std::generate(matrix_B.begin(), matrix_B.end(), genMatrix(K, N, 100));
 
     // Process 0 prints the original matrix_B
     if (rank == 0) {
@@ -71,27 +69,27 @@ void matrixMult()
 
     // Define the datatype for a column
     MPI_Datatype col, coltype;
-    MPI_Type_vector(K, BAND_SIZE, N, boost::mpi::get_mpi_datatype<T>(), &col);
+    MPI_Type_vector(K, BAND_SIZE, N, boost::mpi::get_mpi_datatype<float>(), &col);
     MPI_Type_commit(&col);
-    MPI_Type_create_resized(col, 0, BAND_SIZE*sizeof(T), &coltype);
+    MPI_Type_create_resized(col, 0, BAND_SIZE*sizeof(float), &coltype);
     MPI_Type_commit(&coltype);
 
     for(int c=0; (c+rank)*BAND_SIZE < N; c+=size)
     {
 	// Scatter the columns of the matrix_B
-	MPI_Scatter(matrix_B.data() + (c+rank)*BAND_SIZE, 1, coltype, column, BAND_SIZE*K, boost::mpi::get_mpi_datatype<T>(), 0, MPI_COMM_WORLD);
+	MPI_Scatter(matrix_B.data() + (c+rank)*BAND_SIZE, 1, coltype, column, BAND_SIZE*K, boost::mpi::get_mpi_datatype<float>(), 0, MPI_COMM_WORLD);
 
 	for(int r=0; r*BAND_SIZE < M; r++)
 	{
 	    if (rank == 0)
 	    {
-		std::memcpy(row, matrix_A.data() + r * K * BAND_SIZE, BAND_SIZE * K * sizeof(T));
+		std::memcpy(row, matrix_A.data() + r * K * BAND_SIZE, BAND_SIZE * K * sizeof(float));
 	    }
 
 	    // Broadcast the rows of the matrix_A
-	    MPI_Bcast(row, BAND_SIZE * K, boost::mpi::get_mpi_datatype<T>(), 0, MPI_COMM_WORLD);
+	    MPI_Bcast(row, BAND_SIZE * K, boost::mpi::get_mpi_datatype<float>(), 0, MPI_COMM_WORLD);
 		
-	    computeMM<float>(d_row, d_column, d_res , BAND_SIZE, K, BAND_SIZE);
+	    computeMM(d_row, d_column, d_res , BAND_SIZE, K, BAND_SIZE);
 
 	    // Each process prints the received column
 	    std::cout<<"Process "<<rank<<" received row band: ";
@@ -109,8 +107,8 @@ void matrixMult()
 	    std::cout<<"Process "<<rank<<" computed: ";
 	    for (int i = 0; i < BAND_SIZE * K; i++)
 	    {
-		T temp;
-		cudaMemcpy(&temp, d_res+i, sizeof(T), cudaMemcpyDeviceToHost);
+		float temp;
+		custom_cudaMemcpy_d2h(&temp, d_res+i, sizeof(float));
 		std::cout<<column[i]<<" ";
 	    }
 	    std::cout<<std::endl;
@@ -121,9 +119,9 @@ void matrixMult()
     MPI_Type_free(&coltype);
     MPI_Type_free(&col);
 
-    cudaFree(d_column);
-    cudaFree(d_row);
-    cudaFree(d_res);
+    custom_cudaFree(d_column);
+    custom_cudaFree(d_row);
+    custom_cudaFree(d_res);
     free(column);
     free(row);
 }
@@ -141,7 +139,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    matrixMult<float>();
+    matrixMult();
 
     MPI_Finalize();
     return 0;
