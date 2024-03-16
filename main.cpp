@@ -34,8 +34,8 @@ struct genMatrix_B {
 
     float operator()()
     {
-	return 1;
-	//return (++counter);
+	//return 1;
+	return (++counter);
     }
 };
 
@@ -61,7 +61,7 @@ void matrixMult()
 
     // std::generate(matrix_A.begin(), matrix_A.end(), [n = 0] () mutable { return n++; });
     std::generate(matrix_A.begin(), matrix_A.end(), genMatrix_A(M, K));
-    std::generate(matrix_B.begin(), matrix_B.end(), genMatrix_B(K, N, 100));
+    std::generate(matrix_B.begin(), matrix_B.end(), genMatrix_B(K, N));
 
     // Process 0 prints the original matrix_B
     if (rank == 0) {
