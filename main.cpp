@@ -114,11 +114,11 @@ void matrixMult()
 	    }
 
 	    // Broadcast the rows of the matrix_A
-		if(!switched)
-		{
-	    MPI_Bcast(row, BAND_SIZE * K, boost::mpi::get_mpi_datatype<float>(), 0, MPI_COMM_WORLD);
-		}
-		switched=false;
+	    if(!switched)
+	    {
+		MPI_Bcast(d_row, BAND_SIZE * K, boost::mpi::get_mpi_datatype<float>(), 0, MPI_COMM_WORLD);
+	    }
+	    switched=false;
 		
 	    computeMM(d_row, d_column, d_res , BAND_SIZE, K, BAND_SIZE);
 
