@@ -1,5 +1,62 @@
 #include<iostream>
 #include "mult.cuh"
+#define BLOCK_SIZE 2
+
+#ifndef MAX
+#define MAX(a, b) (a > b ? a : b)
+#endif
+
+#ifndef SHARED_MEMORY_LIMIT_64K
+// Set this to 0 to use more than 64 Kb of shared memory to cache data, to
+// improve the performance of the computations on GPU.
+// Note that you need a GPU that can have more than 64 Kb of shared memory
+// per multiprocessor.
+#define SHARED_MEMORY_LIMIT_64K 0
+#endif
+
+#if SHARED_MEMORY_LIMIT_64K
+// With only 64 Kb shared memory available, we can fit two 8-tile chunks of
+// the A and B matrix data, that is (M = 16) * (K = 8) * 8 * (CHUNK_K = 8)
+// * sizeof(float) = 32 Kb each.
+// (i.e. two 8x8 arrays of tiles of 16x8 float-typed elements per CTA).
+// But we cannot account the 8 Kb total skew overhead, without which the performance
+// would be severely impacted. So we choose to reduce the chunk size in half,
+// i.e. the amount of A and B matrix data we cache in shared memory.
+// Accordingly, this doubles the number of outer iterations across the global K
+// dimension, which only slightly impacts the performance.
+#define CHUNK_K 4
+#else
+#define CHUNK_K 8
+#endif
+
+// MMA matrix tile dimensions.
+
+#define M 16
+#define N 16
+#define K 8
+
+#define BLOCK_ROW_WARPS 2
+#define BLOCK_COL_WARPS 4
+
+#define WARP_ROW_TILES 4
+#define WARP_COL_TILES 2
+
+#define BLOCK_ROW_TILES (WARP_ROW_TILES * BLOCK_ROW_WARPS)
+#define BLOCK_COL_TILES (WARP_COL_TILES * BLOCK_COL_WARPS)
+
+// The macro below is used to shift rows of the A matrix and columns of the B matrix
+// in shared memory to minimize possible bank conflicts.
+// Before performing the nvcuda::wmma::mma_sync operation, the warp must load the matrix
+// data using the nvcuda::wmma::load_matrix_sync operation. Although the memory access pattern
+// is not specified for that function, each lane in the warp can read one or multiple matrix
+// elements from different matrix rows or columns.
+// For shared memory, such access can result in bank conflicts if different rows / columns
+// of the matrix map to the same bank. By shifting each row and column by a few bytes, we
+// make sure that they map to different banks, thus reducing the number of possible bank
+// conflicts.
+// The number of 8 four-byte "float" elements is chosen as the minimum possible shift because
+// we must keep each row and column 256-bit aligned, as required by nvcuda::wmma::load_matrix_sync.
+#define SKEW_FLOAT 8
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
@@ -26,6 +83,11 @@ void custom_cudaMemcpy_d2h ( void* dst, const void* src, size_t count)
     cudaMemcpy(dst, src, count, cudaMemcpyDeviceToHost);
 }
 
+void custom_cudaMemcpy_h2d ( void* dst, const void* src, size_t count)
+{
+    cudaMemcpy(dst, src, count, cudaMemcpyHostToDevice);
+}
+
 __global__ void hello()
 {
     printf("Hi from GPU %d %d\n", threadIdx.x, blockIdx.x);
@@ -37,7 +99,7 @@ void call_cuda()
 	cudaDeviceSynchronize();
 }
 
-	
+
 /**
  * Matrix multiplication (CUDA Kernel) on the device: C = A * B
  * wA is A's width and wB is B's width
@@ -46,8 +108,6 @@ __global__ void MatrixMulCUDA(float *C, const float *A,
     const float *B, int wA,
     int wB) {
 
-  printf("HI REBIN %d\n", threadIdx.x);
-  const int BLOCK_SIZE = 32;
   // Block index
   int bx = blockIdx.x;
   int by = blockIdx.y;
@@ -116,18 +176,6 @@ __global__ void MatrixMulCUDA(float *C, const float *A,
   // each thread writes one element
   int c = wB * BLOCK_SIZE * by + BLOCK_SIZE * bx;
   C[c + wB * ty + tx] = Csub;
-}
-
-void computeMM(const float *A, const float *B, float *C, int m, int n, int k)
-{
-    printf("Life started\n");
-    dim3 threads(16, 16);
-    dim3 grid(n/threads.x, m/threads.y); 
-    //compute_tf32gemm_async_copy(A, B, C);
-    MatrixMulCUDA<<<grid, threads>>>(C, A, B, k, k);
-    gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
-    return;
 }
 
 
@@ -206,7 +254,7 @@ __global__ void simple_wmma_tf32gemm(float *a, float *b,  float *d, int m_ld, in
 #endif
 }
 
-__global__ void compute_tf32gemm_async_copy(const float *A, const float *B, const float *C, float *D, const float alpha, float beta)
+__global__ void compute_tf32gemm_async_copy(const float *A, const float *B, float *D)
 {
 #if __CUDA_ARCH__ >= 800
     extern __shared__ float shmem[][CHUNK_K * K + SKEW_FLOAT];
@@ -215,19 +263,14 @@ __global__ void compute_tf32gemm_async_copy(const float *A, const float *B, cons
     const unsigned int warpId = threadIdx.x / WARP_SIZE;
     const unsigned int laneId = threadIdx.x % WARP_SIZE;
 
-    // This pointer is used to access the C and D matrix tiles this warp computes.
+    // This pointer is used to access the D matrix tiles this warp computes.
     float *shmem_warp_tile_ptr = (float*)&shmem[0][0] + (warpId / BLOCK_ROW_WARPS) * SHMEM_STRIDE * N * BLOCK_ROW_WARPS + (warpId % BLOCK_ROW_WARPS) * SHMEM_OFFSET;
 
-    // This pointer is used to stream the C and D matrices block-wide tile to and from shared memory.
+    // This pointer is used to stream the D matrix block-wide tile to and from shared memory.
     float *shmem_warp_stream_ptr = (float*)&shmem[0][0] + warpId * SHMEM_STRIDE * N;
 
     // Offset in shared memory from which the B matrix is stored.
     constexpr size_t shmem_idx_b_off = BLOCK_COL_TILES * M;
-
-    // Adjust the beta scaler, as it'll be multiplied by alpha at the end of
-    // each tile computation. Technically this is not generally correct (may result
-    // in a loss of precision). Zero still needs to be specially handled though.
-    beta /= alpha;
 
     cuda::pipeline<cuda::thread_scope_thread> pipe = cuda::make_pipeline();
     const auto shape4 = cuda::aligned_size_t<alignof(float4)>(sizeof(float4));
@@ -245,44 +288,21 @@ __global__ void compute_tf32gemm_async_copy(const float *A, const float *B, cons
             break;
         }
 
-        // This warp's pointer to the C matrix data to copy memory from to shared memory.
+        // This warp's pointer to the D matrix data to copy memory from to shared memory.
         const size_t gmem_idx = (block_tile_i + warpId) * M * GLOBAL_MEM_STRIDE + block_tile_j * N;
-        const float *src_gmem_warp_stream_ptr = &C[gmem_idx];
-
-        // Stream multiple C tiles to shared memory.
-#pragma unroll
-        for (int i = 0; i < N; i++) {
-            pipe.producer_acquire();
-            cuda::memcpy_async(&shmem_warp_stream_ptr[(SHMEM_STRIDE * i) + (laneId << loadStride)],
-                                &src_gmem_warp_stream_ptr[(GLOBAL_MEM_STRIDE * i) + (laneId << loadStride)],
-                                shape4, pipe);
-            pipe.producer_commit();
-        }
-        // Now wait for all the above issued 8 batches to complete.
-        cuda::pipeline_consumer_wait_prior<0>(pipe);
-        __syncthreads();
 
         // These fragments will accumulate the result of A and B matrix fragment multiplications
         // along the K_GLOBAL dimension.
         wmma::fragment<wmma::accumulator, M, N, K, float> c[WARP_COL_TILES][WARP_ROW_TILES];
 
-        // Load the C matrix tiles into fragments from shared memory.
+        // Initialize the accumulator fragments to 0.
 #pragma unroll
         for (int i = 0; i < WARP_COL_TILES; i++) {
 #pragma unroll
             for (int j = 0; j < WARP_ROW_TILES; j++) {
-                const float *tile_ptr = shmem_warp_tile_ptr + i * SHMEM_STRIDE * N + j * N;
-
-                wmma::load_matrix_sync(c[i][j], tile_ptr, SHMEM_STRIDE, C_LAYOUT);
-                // Scale the C matrix.
-#pragma unroll
-                for (int t = 0; t < c[i][j].num_elements; t++) {
-                    c[i][j].x[t] *= beta;
-                }
+		wmma::fill_fragment(c[i][j], 0.0f);
             }
         }
-        pipe.consumer_release();
-
         // sync here so that shared memory can then be used for loading A & B matrices.
         __syncthreads();
 
@@ -369,10 +389,6 @@ __global__ void compute_tf32gemm_async_copy(const float *A, const float *B, cons
 #pragma unroll
             for (int j = 0; j < WARP_ROW_TILES; j++) {
 #pragma unroll
-                // Uniform, point-wise transformations of ALL fragment elements by ALL threads in the
-                // warp are well-defined even though element indices within fragment storage are not defined.
-                for (int t = 0; t < c[i][j].num_elements; t++)
-                    c[i][j].x[t] *= alpha;
 
                 float *tile_ptr = shmem_warp_tile_ptr + i * SHMEM_STRIDE * N + j * N;
 
@@ -395,3 +411,19 @@ __global__ void compute_tf32gemm_async_copy(const float *A, const float *B, cons
     }
 #endif
 }
+
+void computeMM(const float *A, const float *B, float *C, int m, int k, int n)
+{
+    dim3 threads(BLOCK_SIZE, BLOCK_SIZE);
+    dim3 grid((m+threads.x-1)/threads.x, (n+threads.y-1)/threads.y); 
+    const int SHMEM_SZ = MAX(sizeof(float) * (BLOCK_COL_TILES * M) * (CHUNK_K * K + SKEW_FLOAT) * 2,
+                       M * (BLOCK_ROW_WARPS * WARP_ROW_TILES) * N * (BLOCK_COL_WARPS * WARP_COL_TILES) * sizeof(float));
+    gpuErrchk( cudaFuncSetAttribute(compute_tf32gemm_async_copy, cudaFuncAttributeMaxDynamicSharedMemorySize, SHMEM_SZ) );
+    compute_tf32gemm_async_copy<<<grid, threads>>>(A, B, C);
+    MatrixMulCUDA<<<grid, threads>>>(C, A, B, k, n);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+
+    return;
+}
+
