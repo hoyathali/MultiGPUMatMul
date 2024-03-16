@@ -16,6 +16,8 @@ LOCAL_MPICC = mpic++
 LOCAL_CUDA_FLAGS = -L$(LOCAL_CUDA_LIBPATH) -lcudart
 LOCAL_MPI_FLAGS = -I/opt/cuda/include -L/opt/cuda/lib64 -lcudart
 
+#DBG_FLAGS = -g -fsanitize=address,undefined, -fstack-protector-all
+
 # Output binary
 TARGET = main
 
@@ -50,7 +52,7 @@ LOCAL_FLAGS:
 
 # Compilation rules for MPI object
 $(MPI_OBJ): $(MPI_SRC)
-	$(MPICC) -c -o $(MPI_OBJ) $(MPI_SRC) $(MPI_FLAGS)
+	$(MPICC) -c -o $(MPI_OBJ) $(MPI_SRC) $(MPI_FLAGS) $(DBG_FLAGS)
 
 # Compilation rules for CUDA object
 $(CUDA_OBJ): $(CUDA_SRC)
@@ -58,7 +60,7 @@ $(CUDA_OBJ): $(CUDA_SRC)
 
 # Linking
 $(TARGET): $(MPI_OBJ) $(CUDA_OBJ)
-	$(MPICC) -o $(TARGET) $(MPI_OBJ) $(CUDA_OBJ) $(CUDA_FLAGS)
+	$(MPICC) -o $(TARGET) $(MPI_OBJ) $(CUDA_OBJ) $(CUDA_FLAGS)  $(DBG_FLAGS)
 
 # Clean
 clean:

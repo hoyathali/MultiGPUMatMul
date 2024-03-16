@@ -70,7 +70,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 
 void custom_cudaMalloc(void** devPtr, size_t size)
 {
-    cudaMalloc(devPtr, size);
+    cudaMallocManaged(devPtr, size);
 }
 
 void custom_cudaFree ( void* devPtr )

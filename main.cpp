@@ -52,6 +52,8 @@ void matrixMult()
     custom_cudaMalloc((void**)&d_column, BAND_SIZE * K * sizeof(float));
     custom_cudaMalloc((void**)&d_row, BAND_SIZE * K * sizeof(float));
     custom_cudaMalloc((void**)&d_res, BAND_SIZE * BAND_SIZE * sizeof(float));
+    cudaMemset(d_column, 0, BAND_SIZE * K * sizeof(float));
+    cudaMemset(d_row, 0, BAND_SIZE * K * sizeof(float));
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -104,26 +106,30 @@ void matrixMult()
     for(int c=0; (c+rank)*BAND_SIZE < N; c+=size)
     {
 	// Scatter the columns of the matrix_B
-	MPI_Scatter(matrix_B.data() + (c+rank)*BAND_SIZE, 1, coltype, d_column, BAND_SIZE*K, boost::mpi::get_mpi_datatype<float>(), 0, MPI_COMM_WORLD);
+	MPI_Scatter(matrix_B.data() + (c+rank)*BAND_SIZE, 1, coltype, column, BAND_SIZE*K, boost::mpi::get_mpi_datatype<float>(), 0, MPI_COMM_WORLD);
+	cudaMemcpy(d_column, column, BAND_SIZE * K * sizeof(float), cudaMemcpyHostToDevice);
 
 	for(; ; forward ? r++:r--)
 	{
 	    if (rank == 0)
 	    {
 		custom_cudaMemcpy_h2d(d_row, matrix_A.data() + r * K * BAND_SIZE, BAND_SIZE * K * sizeof(float));
+		memcpy(row, matrix_A.data(), BAND_SIZE * K *sizeof(float));
 	    }
 
 	    // Broadcast the rows of the matrix_A
 	    if(!switched)
 	    {
-		MPI_Bcast(d_row, BAND_SIZE * K, boost::mpi::get_mpi_datatype<float>(), 0, MPI_COMM_WORLD);
+		MPI_Bcast(row, BAND_SIZE * K, boost::mpi::get_mpi_datatype<float>(), 0, MPI_COMM_WORLD);
+		cudaMemcpy(d_row, row, BAND_SIZE * K * sizeof(float), cudaMemcpyHostToDevice);
 	    }
 	    switched=false;
 		
 	    computeMM(d_row, d_column, d_res , BAND_SIZE, K, BAND_SIZE);
 
 
-	    MPI_Gather(d_res, BAND_SIZE*BAND_SIZE, boost::mpi::get_mpi_datatype<float>(), matrix_C.data() + r * N * BAND_SIZE + c * BAND_SIZE, 1, C_coltype, 0, MPI_COMM_WORLD);
+	    cudaMemcpy(res, d_res, BAND_SIZE * BAND_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+	    MPI_Gather(res, BAND_SIZE*BAND_SIZE, boost::mpi::get_mpi_datatype<float>(), matrix_C.data() + r * N * BAND_SIZE + c * BAND_SIZE, 1, C_coltype, 0, MPI_COMM_WORLD);
 
 	    // Each process prints the received column
 	    std::cout<<"Process "<<rank<<" received row band: ";
@@ -193,6 +199,7 @@ void matrixMult()
     custom_cudaFree(d_res);
     free(column);
     free(row);
+    free(res);
 }
 
 int main(int argc, char *argv[]) {
