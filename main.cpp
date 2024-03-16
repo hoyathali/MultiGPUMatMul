@@ -90,6 +90,10 @@ void matrixMult()
     MPI_Type_create_resized(col, 0, BAND_SIZE*sizeof(float), &coltype);
     MPI_Type_commit(&coltype);
 
+	bool forward=true;
+	bool switched=false;
+	int r=0;
+    
     // Define the datatype for a column
     MPI_Datatype C_col, C_coltype;
     MPI_Type_vector(M, BAND_SIZE, N, boost::mpi::get_mpi_datatype<float>(), &C_col);
@@ -102,7 +106,7 @@ void matrixMult()
 	// Scatter the columns of the matrix_B
 	MPI_Scatter(matrix_B.data() + (c+rank)*BAND_SIZE, 1, coltype, d_column, BAND_SIZE*K, boost::mpi::get_mpi_datatype<float>(), 0, MPI_COMM_WORLD);
 
-	for(int r=0; r*BAND_SIZE < M; r++)
+	for(; ; forward ? r++:r--)
 	{
 	    if (rank == 0)
 	    {
@@ -110,7 +114,11 @@ void matrixMult()
 	    }
 
 	    // Broadcast the rows of the matrix_A
-	    MPI_Bcast(d_row, BAND_SIZE * K, boost::mpi::get_mpi_datatype<float>(), 0, MPI_COMM_WORLD);
+		if(!switched)
+		{
+	    MPI_Bcast(row, BAND_SIZE * K, boost::mpi::get_mpi_datatype<float>(), 0, MPI_COMM_WORLD);
+		}
+		switched=false;
 		
 	    computeMM(d_row, d_column, d_res , BAND_SIZE, K, BAND_SIZE);
 
@@ -147,6 +155,21 @@ void matrixMult()
 		std::cout<<temp<<" ";
 	    }
 	    std::cout<<std::endl;
+
+		if(r==0 && !forward)
+		{
+			forward=true;
+			switched=true;
+			break;
+
+		}
+		if(r==(M/BAND_SIZE) -1 && forward)
+		{
+			forward=false;
+			switched=true;
+			break;
+		}
+
 	}
     }
 
@@ -190,4 +213,3 @@ int main(int argc, char *argv[]) {
     MPI_Finalize();
     return 0;
 }
-
