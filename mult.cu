@@ -1,5 +1,6 @@
 #include<iostream>
 #include "mult.cuh"
+#define BLOCK_SIZE 2
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
@@ -26,6 +27,11 @@ void custom_cudaMemcpy_d2h ( void* dst, const void* src, size_t count)
     cudaMemcpy(dst, src, count, cudaMemcpyDeviceToHost);
 }
 
+void custom_cudaMemcpy_h2d ( void* dst, const void* src, size_t count)
+{
+    cudaMemcpy(dst, src, count, cudaMemcpyHostToDevice);
+}
+
 __global__ void hello()
 {
     printf("Hi from GPU %d %d\n", threadIdx.x, blockIdx.x);
@@ -37,7 +43,7 @@ void call_cuda()
 	cudaDeviceSynchronize();
 }
 
-	
+
 /**
  * Matrix multiplication (CUDA Kernel) on the device: C = A * B
  * wA is A's width and wB is B's width
@@ -46,8 +52,6 @@ __global__ void MatrixMulCUDA(float *C, const float *A,
     const float *B, int wA,
     int wB) {
 
-  printf("HI REBIN %d\n", threadIdx.x);
-  const int BLOCK_SIZE = 32;
   // Block index
   int bx = blockIdx.x;
   int by = blockIdx.y;
@@ -118,15 +122,15 @@ __global__ void MatrixMulCUDA(float *C, const float *A,
   C[c + wB * ty + tx] = Csub;
 }
 
-void computeMM(const float *A, const float *B, float *C, int m, int n, int k)
+void computeMM(const float *A, const float *B, float *C, int m, int k, int n)
 {
-    printf("Life started\n");
-    dim3 threads(16, 16);
-    dim3 grid(n/threads.x, m/threads.y); 
+    dim3 threads(BLOCK_SIZE, BLOCK_SIZE);
+    dim3 grid((m+threads.x-1)/threads.x, (n+threads.y-1)/threads.y); 
     //compute_tf32gemm_async_copy(A, B, C);
-    MatrixMulCUDA<<<grid, threads>>>(C, A, B, k, k);
+    MatrixMulCUDA<<<grid, threads>>>(C, A, B, k, n);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
+
     return;
 }
 
