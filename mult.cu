@@ -303,8 +303,6 @@ __global__ void compute_tf32gemm_async_copy(const float *A, const float *B, floa
 		wmma::fill_fragment(c[i][j], 0.0f);
             }
         }
-        // sync here so that shared memory can then be used for loading A & B matrices.
-        __syncthreads();
 
         // Select what warp copies what matrix to shared memory.
         // Warps 0-3 copy the A matrix, warps 4-7 copy the B matrix.
@@ -343,7 +341,7 @@ __global__ void compute_tf32gemm_async_copy(const float *A, const float *B, floa
             cuda::pipeline_consumer_wait_prior<0>(pipe);
             __syncthreads();
 
-            // Compute a grid of C matrix tiles in each warp.
+            // Compute a grid of D matrix tiles in each warp.
 #pragma unroll
             for (int k_step = 0; k_step < CHUNK_K; k_step++) {
                 wmma::fragment<wmma::matrix_a, M, N, K, wmma::precision::tf32, wmma::row_major> a[WARP_COL_TILES];

@@ -6,6 +6,7 @@
 #include <mpi.h>
 #include <boost/mpi/datatype.hpp>
 #include "mult.cuh"
+#include <cuda_runtime.h>
 
 #define BAND_SIZE 2
 #define M 4  // Size of the matrix_B
@@ -142,6 +143,7 @@ void matrixMult()
 	    {
 		float temp;
 		custom_cudaMemcpy_d2h(&temp, d_res+i, sizeof(float));
+		cudaMemcpy(&temp, d_res+i, sizeof(float), cudaMemcpyDeviceToHost);
 		std::cout<<temp<<" ";
 	    }
 	    std::cout<<std::endl;
