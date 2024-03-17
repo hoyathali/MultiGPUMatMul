@@ -114,7 +114,7 @@ void matrixMult()
 	    if (rank == 0)
 	    {
 		custom_cudaMemcpy_h2d(d_row, matrix_A.data() + r * K * BAND_SIZE, BAND_SIZE * K * sizeof(float));
-		memcpy(row, matrix_A.data(), BAND_SIZE * K *sizeof(float));
+        memcpy(row, matrix_A.data() + r * K * BAND_SIZE, BAND_SIZE * K * sizeof(float));
 	    }
 
 	    // Broadcast the rows of the matrix_A
