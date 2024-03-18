@@ -7,12 +7,13 @@
 #include <boost/mpi/datatype.hpp>
 #include "mult.cuh"
 #include <cuda_runtime.h>
+#include <fstream>
 
-#define BAND_SIZE 2
-#define M 4  // Size of the matrix_B
-#define K 4  // Size of the matrix_B
-#define N 4  // Size of the matrix_B
-
+#define BAND_SIZE 8
+#define M 32  // Size of the matrix_B
+#define K 32 // Size of the matrix_B
+#define N 32  // Size of the matrix_B
+#define verbose false //For printing matrices row received data
 struct genMatrix_A {
     unsigned int nRows;
     unsigned int nCols;
@@ -22,7 +23,8 @@ struct genMatrix_A {
 
     float operator()()
     {
-	return (++counter);
+	return 1;
+        //return (++counter);
     }
 };
 
@@ -35,8 +37,8 @@ struct genMatrix_B {
 
     float operator()()
     {
-	//return 1;
-	return (++counter);
+	return 1;
+	//return (++counter);
     }
 };
 
@@ -66,24 +68,35 @@ void matrixMult()
     std::generate(matrix_A.begin(), matrix_A.end(), genMatrix_A(M, K));
     std::generate(matrix_B.begin(), matrix_B.end(), genMatrix_B(K, N));
 
+    
     // Process 0 prints the original matrix_B
     if (rank == 0) {
-	std::cout<<"Original matrix_A:"<<std::endl;
+	
+        if(verbose){
+        
+        std::cout<<"Original matrix_A:"<<std::endl;
         for (int i = 0; i < M; i++) {
             for (int j = 0; j < K; j++)
                 std::cout<<matrix_A[i*K + j] << "\t";
             std::cout<<std::endl;
         }
-	std::cout<<std::endl;
+        std::cout<<std::endl;
 
-	std::cout<<"Original matrix_B:"<<std::endl;;
+        std::cout<<"Original matrix_B:"<<std::endl;;
         for (int i = 0; i < K; i++) {
             for (int j = 0; j < N; j++)
                 std::cout<<matrix_B[i*N + j] << "\t";
             std::cout<<std::endl;
         }
-    }
+     }
+               
     std::cout<<std::endl;
+    std::cout<<"Matrix A size: "<<M<<" * "<<K<<std::endl;
+    std::cout<<"Matrix B size: "<<K<<" * "<<N<<std::endl;
+    std::cout<<"Band size: " << BAND_SIZE<<std::endl;   
+     
+    }
+        
 
     // Define the datatype for a column
     MPI_Datatype col, coltype;
@@ -114,7 +127,7 @@ void matrixMult()
 	    if (rank == 0)
 	    {
 		custom_cudaMemcpy_h2d(d_row, matrix_A.data() + r * K * BAND_SIZE, BAND_SIZE * K * sizeof(float));
-		memcpy(row, matrix_A.data(), BAND_SIZE * K *sizeof(float));
+        memcpy(row, matrix_A.data() + r * K * BAND_SIZE, BAND_SIZE * K * sizeof(float));
 	    }
 
 	    // Broadcast the rows of the matrix_A
@@ -130,38 +143,43 @@ void matrixMult()
 
 	    cudaMemcpy(res, d_res, BAND_SIZE * BAND_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
 	    MPI_Gather(res, BAND_SIZE*BAND_SIZE, boost::mpi::get_mpi_datatype<float>(), matrix_C.data() + r * N * BAND_SIZE + c * BAND_SIZE, 1, C_coltype, 0, MPI_COMM_WORLD);
+        
+        
+        if(verbose){
+                // Each process prints the received column
+                std::cout<<"Process "<<rank<<" received row band: ";
+                 for (int i = 0; i < BAND_SIZE * K; i++)
+                 {
+                float temp;
+                custom_cudaMemcpy_d2h(&temp, d_row+i, sizeof(float));
+                std::cout<<temp<<" ";
+                 }
+                std::cout<<std::endl;
 
-	    // Each process prints the received column
-	    std::cout<<"Process "<<rank<<" received row band: ";
-	     for (int i = 0; i < BAND_SIZE * K; i++)
-	     {
-		float temp;
-		custom_cudaMemcpy_d2h(&temp, d_row+i, sizeof(float));
-		std::cout<<temp<<" ";
-	     }
-	    std::cout<<std::endl;
+                // Each process prints the received column
+                std::cout<<"Process "<<rank<<" received column band: ";
+                for (int i = 0; i < BAND_SIZE * K; i++)
+                 {
+                float temp;
+                custom_cudaMemcpy_d2h(&temp, d_column+i, sizeof(float));
+                std::cout<<temp<<" ";
+                 }
+                std::cout<<std::endl;
 
-	    // Each process prints the received column
-	    std::cout<<"Process "<<rank<<" received column band: ";
-	    for (int i = 0; i < BAND_SIZE * K; i++)
-	     {
-		float temp;
-		custom_cudaMemcpy_d2h(&temp, d_column+i, sizeof(float));
-		std::cout<<temp<<" ";
-	     }
-	    std::cout<<std::endl;
-
-	    // Each process prints the resultant matrix
-	    std::cout<<"Process "<<rank<<" computed: ";
-	    for (int i = 0; i < BAND_SIZE * BAND_SIZE; i++)
-	    {
-		float temp;
-		custom_cudaMemcpy_d2h(&temp, d_res+i, sizeof(float));
-		cudaMemcpy(&temp, d_res+i, sizeof(float), cudaMemcpyDeviceToHost);
-		std::cout<<temp<<" ";
-	    }
-	    std::cout<<std::endl;
-
+                // Each process prints the resultant matrix
+                std::cout<<"Process "<<rank<<" computed: ";
+                for (int i = 0; i < BAND_SIZE * BAND_SIZE; i++)
+                {
+                float temp;
+                custom_cudaMemcpy_d2h(&temp, d_res+i, sizeof(float));
+                cudaMemcpy(&temp, d_res+i, sizeof(float), cudaMemcpyDeviceToHost);
+                std::cout<<temp<<" ";
+                }
+                std::cout<<std::endl;
+       }
+        
+        //Handing iterator logic to benefit from one overlap in every iteration
+        
 		if(r==0 && !forward)
 		{
 			forward=true;
@@ -181,15 +199,28 @@ void matrixMult()
 
     // Process 0 prints the original matrix_B
     if (rank == 0) {
-	std::cout<<"Computed matrix_C:"<<std::endl;
+        
+    // Open a file in write mode.
+     std::ofstream outFile("mpi_matrix_output.txt");
+      if(verbose){
+         std::cout<<"Computed matrix_C:"<<std::endl;
+          }
         for (int i = 0; i < M; i++) {
-            for (int j = 0; j < N; j++)
+            for (int j = 0; j < N; j++){
+               if(verbose){
                 std::cout<<matrix_C[i*K + j] << "\t";
-            std::cout<<std::endl;
-        }
-	std::cout<<std::endl;
+               }
+                outFile<<matrix_C[i*K + j] << "\t";
+        }      
+          outFile<<"\n";
+         if(verbose){
+          std::cout<<std::endl;
+         }
     }
-    std::cout<<std::endl;
+      std::cout<<std::endl<<"Matrix Multiplication Completed!"<<std::endl;
+      outFile.close();
+
+    }
 
     MPI_Type_free(&coltype);
     MPI_Type_free(&col);

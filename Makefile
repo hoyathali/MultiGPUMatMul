@@ -5,7 +5,7 @@ REMOTE_CUDA_INCLUDEPATH = $(REMOTE_CUDA_PATH)/include
 REMOTE_CUDA_LIBPATH = $(REMOTE_CUDA_PATH)/lib64
 REMOTE_MPICC = mpicxx
 REMOTE_CUDA_FLAGS = -I$(REMOTE_CUDA_INCLUDEPATH) -L$(REMOTE_CUDA_LIBPATH) -lcudart
-REMOTE_MPI_FLAGS = 
+REMOTE_MPI_FLAGS = -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcudart
 REMOTE_NVCC_FLAGS = 
 
 # Paths and flags for local system
@@ -40,6 +40,7 @@ REMOTE_FLAGS:
 	$(eval NVCC = $(REMOTE_NVCC))
 	$(eval MPICC = $(REMOTE_MPICC))
 	$(eval CUDA_FLAGS = $(REMOTE_CUDA_FLAGS))
+	$(eval MPI_FLAGS = $(REMOTE_MPI_FLAGS))
 	$(eval CUDA_LIBPATH = $(REMOTE_CUDA_LIBPATH))
 
 # Set flags for local compilation
