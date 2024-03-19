@@ -21,8 +21,8 @@ struct genMatrix_A {
 
     float operator()()
     {
-	return 1;
-        //return (++counter);
+	//return 1;
+        return (++counter);
     }
 };
 
@@ -141,7 +141,6 @@ void matrixMult()
 		
 	    computeMM(d_row, d_column, d_res , BAND_SIZE, K_GLOBAL, BAND_SIZE);
 
-
 	    gpuErrchk( cudaMemcpy(res, d_res, BAND_SIZE * BAND_SIZE * sizeof(float), cudaMemcpyDeviceToHost) );
 	    MPI_Gather(res, BAND_SIZE*BAND_SIZE, boost::mpi::get_mpi_datatype<float>(), matrix_C.data() + r * N_GLOBAL * BAND_SIZE + c * BAND_SIZE, 1, C_coltype, 0, MPI_COMM_WORLD);
         
@@ -169,7 +168,7 @@ void matrixMult()
 		std::cout<<std::endl;
 
 		// Each process prints the resultant matrix
-		std::cout<<"Process "<<rank<<" computed: "<<r<<" "<<c<<" ";
+		std::cout<<"Process "<<rank<<" computed ("<<r<<" "<<c<<"): ";
 		for (int i = 0; i < BAND_SIZE * BAND_SIZE; i++)
 		{
 		    float temp;
@@ -196,7 +195,7 @@ void matrixMult()
     }
 
     // Process 0 prints the original matrix_B
-    if (rank == 0 && false) {
+    if (rank == 0) {
         
     // Open a file in write mode.
      std::ofstream outFile("mpi_matrix_output.txt");
@@ -249,7 +248,7 @@ int main(int argc, char *argv[]) {
 
     static_assert( M_GLOBAL % BAND_SIZE == 0 );
     static_assert( N_GLOBAL % BAND_SIZE == 0 );
-    if (BAND_SIZE*size > K_GLOBAL || K_GLOBAL%size != 0) {
+    if (std::min(M_GLOBAL, N_GLOBAL)%(size*BAND_SIZE) != 0) {
         if (rank == 0)
             printf("Prereq issue.\n");
         MPI_Finalize();

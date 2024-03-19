@@ -435,8 +435,8 @@ void computeMM(const float *A, const float *B, float *C, int m, int k, int n)
     const int SHMEM_SZ = MAX(sizeof(float) * (BLOCK_COL_TILES * M) * (CHUNK_K * K + SKEW_FLOAT) * 2,
                        M * (BLOCK_ROW_WARPS * WARP_ROW_TILES) * N * (BLOCK_COL_WARPS * WARP_COL_TILES) * sizeof(float));
     gpuErrchk( cudaFuncSetAttribute(compute_tf32gemm_async_copy, cudaFuncAttributeMaxDynamicSharedMemorySize, SHMEM_SZ) );
-    //compute_tf32gemm_async_copy<<<deviceProp.multiProcessorCount*2, THREADS_PER_BLOCK, SHMEM_SZ>>>(A, B, C);
-    MatrixMulCUDA<<<grid, threads>>>(C, A, B, k, n);
+    compute_tf32gemm_async_copy<<<deviceProp.multiProcessorCount*2, THREADS_PER_BLOCK, SHMEM_SZ>>>(A, B, C);
+    //MatrixMulCUDA<<<grid, threads>>>(C, A, B, k, n);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 
