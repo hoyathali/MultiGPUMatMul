@@ -6,7 +6,6 @@ REMOTE_CUDA_LIBPATH = $(REMOTE_CUDA_PATH)/lib64
 REMOTE_MPICC = mpicxx
 REMOTE_CUDA_FLAGS = -I$(REMOTE_CUDA_INCLUDEPATH) -L$(REMOTE_CUDA_LIBPATH) -lcudart
 REMOTE_MPI_FLAGS = -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcudart
-REMOTE_NVCC_FLAGS = 
 
 # Paths and flags for local system
 LOCAL_CUDA_PATH = /opt/cuda
@@ -16,7 +15,9 @@ LOCAL_MPICC = mpic++
 LOCAL_CUDA_FLAGS = -L$(LOCAL_CUDA_LIBPATH) -lcudart
 LOCAL_MPI_FLAGS = -I/opt/cuda/include -L/opt/cuda/lib64 -lcudart
 
-DBG_FLAGS = -g -fsanitize=address,undefined, -fstack-protector-all
+MPICC_DBG_FLAGS = -g # -fsanitize=address,undefined, -fstack-protector-all
+NVCC_DBG_FLAGS = -g -G
+NVCC_FLAGS = -gencode arch=compute_86,code=sm_86
 
 # Output binary
 TARGET = main
@@ -24,6 +25,9 @@ TARGET = main
 # Object files
 MPI_OBJ = mpi.o
 CUDA_OBJ = mult.o
+
+# Header files
+HEADERS = mult.cuh
 
 # Source files
 MPI_SRC = main.cpp
@@ -52,12 +56,12 @@ LOCAL_FLAGS:
 	$(eval CUDA_LIBPATH = $(LOCAL_CUDA_LIBPATH))
 
 # Compilation rules for MPI object
-$(MPI_OBJ): $(MPI_SRC)
-	$(MPICC) -c -o $(MPI_OBJ) $(MPI_SRC) $(MPI_FLAGS) $(DBG_FLAGS)
+$(MPI_OBJ): $(MPI_SRC) $(HEADERS)
+	$(MPICC) -c -o $(MPI_OBJ) $(MPI_SRC) $(MPI_FLAGS) $(MPICC_DBG_FLAGS)
 
 # Compilation rules for CUDA object
-$(CUDA_OBJ): $(CUDA_SRC)
-	$(NVCC) -c -o $(CUDA_OBJ) $(CUDA_SRC) $(NVCC_FLAGS)
+$(CUDA_OBJ): $(CUDA_SRC) $(HEADERS)
+	$(NVCC) -c -o $(CUDA_OBJ) $(CUDA_SRC) $(NVCC_FLAGS) $(NVCC_DBG_FLAGS)
 
 # Linking
 $(TARGET): $(MPI_OBJ) $(CUDA_OBJ)
