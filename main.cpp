@@ -9,7 +9,7 @@
 #include <cuda_runtime.h>
 #include <fstream>
 
-#define BAND_SIZE 8
+#define BAND_SIZE 4
 #define M 32  // Size of the matrix_B
 #define K 32 // Size of the matrix_B
 #define N 32  // Size of the matrix_B
@@ -108,7 +108,7 @@ void matrixMult()
 	bool forward=true;
 	bool switched=false;
 	int r=0;
-    
+    int count=0;
     // Define the datatype for a column
     MPI_Datatype C_col, C_coltype;
     MPI_Type_vector(M, BAND_SIZE, N, boost::mpi::get_mpi_datatype<float>(), &C_col);
@@ -178,6 +178,10 @@ void matrixMult()
                 std::cout<<std::endl;
        }
         
+        if(rank==0){
+          count=count+2;
+          std::cout<<"Gathered results "<<count<<"/" <<M/BAND_SIZE * M/BAND_SIZE<<std::endl; 
+        }
         //Handing iterator logic to benefit from one overlap in every iteration
         
 		if(r==0 && !forward)
