@@ -107,7 +107,6 @@ void matrixMult()
     MPI_Type_create_resized(col, 0, BAND_SIZE*sizeof(float), &coltype);
     MPI_Type_commit(&coltype);
 
-    
     // Define the datatype for a column
     MPI_Datatype C_col, C_coltype;
     MPI_Type_vector(BAND_SIZE, BAND_SIZE, N_GLOBAL, boost::mpi::get_mpi_datatype<float>(), &C_col);
