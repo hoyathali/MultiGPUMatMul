@@ -15,8 +15,8 @@ LOCAL_MPICC = mpic++
 LOCAL_CUDA_FLAGS = -L$(LOCAL_CUDA_LIBPATH) -lcudart
 LOCAL_MPI_FLAGS = -I/opt/cuda/include -L/opt/cuda/lib64 -lcudart
 
-MPICC_DBG_FLAGS = -g # -fsanitize=address,undefined, -fstack-protector-all
-NVCC_DBG_FLAGS = -g -G
+# MPICC_DBG_FLAGS = -g  -fsanitize=address,undefined, -fstack-protector-all
+# NVCC_DBG_FLAGS = -g -G
 NVCC_FLAGS = -gencode arch=compute_86,code=sm_86
 
 # Output binary

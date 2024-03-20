@@ -3,7 +3,7 @@
 // MMA matrix tile dimensions.
 #define M_GLOBAL 1024		    // Min 16
 #define N_GLOBAL 1024		    // Min 16
-#define K_GLOBAL 4096		    // Min 8
+#define K_GLOBAL 1024		    // Min 8
 #define BAND_SIZE 256		    // Min 16
 
 
