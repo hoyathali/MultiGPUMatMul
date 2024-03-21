@@ -4,7 +4,7 @@ REMOTE_NVCC = $(REMOTE_CUDA_PATH)/bin/nvcc
 REMOTE_CUDA_INCLUDEPATH = $(REMOTE_CUDA_PATH)/include
 REMOTE_CUDA_LIBPATH = $(REMOTE_CUDA_PATH)/lib64
 REMOTE_MPICC = mpicxx
-REMOTE_CUDA_FLAGS = -I$(REMOTE_CUDA_INCLUDEPATH) -L$(REMOTE_CUDA_LIBPATH) -lcudart
+REMOTE_CUDA_FLAGS = -I$(REMOTE_CUDA_INCLUDEPATH) -L$(REMOTE_CUDA_LIBPATH) -lcudart -lcublas
 REMOTE_MPI_FLAGS = -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcudart
 
 # Paths and flags for local system
