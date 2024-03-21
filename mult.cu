@@ -1,7 +1,10 @@
 #include<iostream>
+
 #include <cuda.h>
 #include <mma.h>
 #include <cuda/pipeline>
+#include <cuda_runtime.h>
+#include <cublas_v2.h>
 
 #include "mult.cuh"
 
@@ -443,3 +446,18 @@ void computeMM(const float *A, const float *B, float *C, int m, int k, int n)
     return;
 }
 
+void cublasMM(const float *A, const float *B, float *C, int m, int k, int n)
+{
+    cublasHandle_t handle;
+
+    cublasCreate(&handle);
+
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+
+    // Since cublas assumes column major order, we calc C^T = B^T * A^T
+    cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, n, m, k, &alpha, B, n, A, k, &beta, C, n);
+
+    cublasDestroy(handle);
+    return;
+}

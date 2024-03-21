@@ -15,21 +15,21 @@
 struct genMatrix_A {
     unsigned int nRows;
     unsigned int nCols;
-    float counter = 0;
+    int counter = 0;
 
     genMatrix_A(unsigned int nRows, unsigned int nCols, float init=0): nRows(nRows), nCols(nCols), counter(init) {}
 
     float operator()()
     {
 	//return 1;
-        return (++counter);
+	return (++counter);
     }
 };
 
 struct genMatrix_B {
     unsigned int nRows;
     unsigned int nCols;
-    float counter = 0;
+    int counter = 0;
 
     genMatrix_B(unsigned int nRows, unsigned int nCols, float init=0): nRows(nRows), nCols(nCols), counter(init) {}
 
@@ -140,6 +140,7 @@ void matrixMult()
 	    switched=false;
 		
 	    computeMM(d_row, d_column, d_res , BAND_SIZE, K_GLOBAL, BAND_SIZE);
+	    //cublasMM(d_row, d_column, d_res , BAND_SIZE, K_GLOBAL, BAND_SIZE);
 
 	    gpuErrchk( cudaMemcpy(res, d_res, BAND_SIZE * BAND_SIZE * sizeof(float), cudaMemcpyDeviceToHost) );
 	    MPI_Gather(res, BAND_SIZE*BAND_SIZE, boost::mpi::get_mpi_datatype<float>(), matrix_C.data() + r * N_GLOBAL * BAND_SIZE + c * BAND_SIZE, 1, C_coltype, 0, MPI_COMM_WORLD);
