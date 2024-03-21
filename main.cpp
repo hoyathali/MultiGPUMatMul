@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <boost/mpi/datatype_fwd.hpp>
 #include <vector>
 #include <stdio.h>
 #include <stdlib.h>
@@ -143,7 +144,11 @@ void matrixMult()
 	    //cublasMM(d_row, d_column, d_res , BAND_SIZE, K_GLOBAL, BAND_SIZE);
 
 	    gpuErrchk( cudaMemcpy(res, d_res, BAND_SIZE * BAND_SIZE * sizeof(float), cudaMemcpyDeviceToHost) );
-	    MPI_Gather(res, BAND_SIZE*BAND_SIZE, boost::mpi::get_mpi_datatype<float>(), matrix_C.data() + r * N_GLOBAL * BAND_SIZE + c * BAND_SIZE, 1, C_coltype, 0, MPI_COMM_WORLD);
+	    //MPI_Gather(res, BAND_SIZE*BAND_SIZE, boost::mpi::get_mpi_datatype<float>(), matrix_C.data() + r * N_GLOBAL * BAND_SIZE + c * BAND_SIZE, 1, C_coltype, 0, MPI_COMM_WORLD);
+	    for(int k=0; k<BAND_SIZE; k++)
+	    {
+		MPI_Gather(res+k*BAND_SIZE, BAND_SIZE, boost::mpi::get_mpi_datatype<float>(), matrix_C.data() + (r * BAND_SIZE+k) * N_GLOBAL + c * BAND_SIZE, BAND_SIZE, boost::mpi::get_mpi_datatype<float>(), 0, MPI_COMM_WORLD);
+	    }
         
         
 	    if(verbose)
